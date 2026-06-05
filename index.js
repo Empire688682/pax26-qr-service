@@ -262,16 +262,22 @@ async function startSession(userId) {
         }
 
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`[Session ${userId}] Connection closed. Reconnect: ${shouldReconnect}`);
-            
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+            // Code 515 = stream error / server-side forced disconnect — wipe creds and start fresh
+            const isStreamError = statusCode === 515;
+            const shouldReconnect = !isLoggedOut;
+
+            console.log(`[Session ${userId}] Connection closed. StatusCode: ${statusCode} Reconnect: ${shouldReconnect}`);
+
             sessionInfo.status = 'DISCONNECTED';
             sessionInfo.qr = null;
+            // Remove from active map immediately so stopSession won't try to logout again
+            activeSessions.delete(userId);
 
-            if (!shouldReconnect) {
-                console.log(`[Session ${userId}] Logged out. Wiping credentials.`);
-                await clearAuth();
-                activeSessions.delete(userId);
+            if (isLoggedOut || isStreamError) {
+                console.log(`[Session ${userId}] ${isStreamError ? 'Stream error 515' : 'Logged out'}. Wiping credentials.`);
+                try { await clearAuth(); } catch (e) {}
 
                 await UserModel.findByIdAndUpdate(userId, {
                     $set: {
@@ -283,6 +289,12 @@ async function startSession(userId) {
                         "whatsapp.displayPhone": ""
                     }
                 });
+
+                if (isStreamError) {
+                    // After 515, wait longer before retrying — WhatsApp needs a moment
+                    console.log(`[Session ${userId}] Will retry fresh session in 8s...`);
+                    setTimeout(() => startSession(userId), 8000);
+                }
             } else {
                 setTimeout(() => startSession(userId), 5000);
             }
@@ -361,14 +373,16 @@ async function startSession(userId) {
 async function stopSession(userId) {
     if (activeSessions.has(userId)) {
         const { sock } = activeSessions.get(userId);
-        try {
-            sock.logout();
-            sock.end();
-        } catch (e) {}
+        // Safely close — socket may already be closed (e.g. after stream error 515)
+        try { sock.end(undefined); } catch (e) {}
         activeSessions.delete(userId);
     }
-    const { clearAuth } = await useMongoAuthState(userId);
-    await clearAuth();
+    try {
+        const { clearAuth } = await useMongoAuthState(userId);
+        await clearAuth();
+    } catch (e) {
+        console.error(`[Session ${userId}] clearAuth error (non-fatal):`, e.message);
+    }
 }
 
 // Initialize active sessions from DB
