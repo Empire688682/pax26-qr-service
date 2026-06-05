@@ -152,6 +152,8 @@ async function useMongoAuthState(userId) {
 
 // Active Sessions Cache
 const activeSessions = new Map();
+// Reconnect guard: prevents multiple concurrent startSession calls for same user
+const reconnectTimers = new Map();
 
 // Helper to upload media to Cloudinary
 const uploadBufferToCloudinary = (buffer, userId, customerPhone) => {
@@ -189,6 +191,12 @@ const postWebhookToNext = async (payload) => {
 
 // Reconnect/Start WhatsApp Connection
 async function startSession(userId) {
+    // Cancel any pending reconnect timer for this user
+    if (reconnectTimers.has(userId)) {
+        clearTimeout(reconnectTimers.get(userId));
+        reconnectTimers.delete(userId);
+    }
+
     if (activeSessions.has(userId)) {
         const existing = activeSessions.get(userId);
         if (existing.status === 'CONNECTED') {
@@ -293,10 +301,12 @@ async function startSession(userId) {
                 if (isStreamError) {
                     // After 515, wait longer before retrying — WhatsApp needs a moment
                     console.log(`[Session ${userId}] Will retry fresh session in 8s...`);
-                    setTimeout(() => startSession(userId), 8000);
+                    const t = setTimeout(() => startSession(userId), 8000);
+                    reconnectTimers.set(userId, t);
                 }
             } else {
-                setTimeout(() => startSession(userId), 5000);
+                const t = setTimeout(() => startSession(userId), 5000);
+                reconnectTimers.set(userId, t);
             }
         }
     });
@@ -371,6 +381,11 @@ async function startSession(userId) {
 
 // Stop WhatsApp Session
 async function stopSession(userId) {
+    // Cancel any pending reconnect
+    if (reconnectTimers.has(userId)) {
+        clearTimeout(reconnectTimers.get(userId));
+        reconnectTimers.delete(userId);
+    }
     if (activeSessions.has(userId)) {
         const { sock } = activeSessions.get(userId);
         // Safely close — socket may already be closed (e.g. after stream error 515)

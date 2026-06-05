@@ -13,8 +13,9 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "@whiskeysockets/baileys": "6.7.23",
     "axios": "^1.16.1",
+    "baileys": "github:WhiskeySockets/Baileys",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
