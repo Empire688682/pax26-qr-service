@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: pax26-qr-service
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: MONGODB_URI
+        sync: false   # set manually in Render dashboard
+      - key: NEXT_APP_URL
+        sync: false   # set to https://pax26.com in Render dashboard
+      - key: QR_SERVICE_SECRET
+        sync: false   # must match QR_SERVICE_SECRET in your Next.js env
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
